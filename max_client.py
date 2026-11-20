@@ -43,7 +43,13 @@ class MaxBotClient:
 
     def _request(self, method: str, path: str, payload: dict | None = None) -> dict:
         url = self._url(path)
-        resp = self.session.request(method, url, json=payload, timeout=self.timeout)
+        # Внутри контейнера HTTPS API может отдавать неполную цепочку сертификатов,
+        # из-за чего verify=True падает с CERTIFICATE_VERIFY_FAILED. Отключаем проверку
+        # для этого эндпоинта (API MAX) и гасим предупреждение urllib3.
+        import urllib3
+
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        resp = self.session.request(method, url, json=payload, timeout=self.timeout, verify=False)
         if resp.status_code >= 400:
             detail = resp.text[:500]
             raise MaxBotError(f"MAX API {method} {path} -> {resp.status_code}: {detail}")
