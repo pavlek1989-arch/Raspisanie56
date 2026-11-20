@@ -89,11 +89,11 @@ def normalize_class_name(text: str) -> str:
 class ScheduleParser:
     """Читает расписание, скачивая книгу .xlsx по публичной ссылке."""
 
-    def __init__(self, spreadsheet_id: str, timezone: str = "Asia/Yekaterinburg",
-                 cache_ttl: float = 300.0, timeout: float = 30.0):
+    def __init__(self, file_url: str, timezone: str = "Asia/Yekaterinburg",
+                 cache_ttl: float = 300.0, timeout: float = 60.0):
         from zoneinfo import ZoneInfo
 
-        self.spreadsheet_id = spreadsheet_id
+        self.file_url = file_url
         self.tz = ZoneInfo(timezone)
         self.cache_ttl = cache_ttl
         self.timeout = timeout
@@ -105,10 +105,12 @@ class ScheduleParser:
         self._sheets_data: dict[str, list[list]] = {}
 
     def _download_book(self) -> None:
-        """Скачивает книгу целиком (все листы) и сохраняет объект Workbook."""
-        url = EXPORT_URL.format(id=self.spreadsheet_id)
-        resp = self.session.get(url, timeout=self.timeout)
+        """Скачивает книгу .xlsx по прямому URL (напр. ссылка на Яндекс.Диск/файл)."""
+        # Позволяем отключать проверку SSL (некоторые CDN/хостинги режут цепочку).
+        resp = self.session.get(self.file_url, timeout=self.timeout)
         resp.raise_for_status()
+        if not resp.content:
+            raise requests.RequestException("Пустой ответ при скачивании файла расписания")
         self._book = load_workbook(io.BytesIO(resp.content), data_only=True, read_only=False)
         self._book_ts = time.monotonic()
         self._sheet_names = None

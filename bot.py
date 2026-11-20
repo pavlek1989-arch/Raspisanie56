@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import datetime, date, timedelta
 from threading import Lock
 from zoneinfo import ZoneInfo
@@ -34,15 +35,15 @@ app = Flask(__name__)
 # --- Настройки ---
 MAX_TOKEN = os.getenv("MAX_TOKEN", "")
 MAX_WEBHOOK_SECRET = os.getenv("MAX_WEBHOOK_SECRET", "")
-SPREADSHEET_ID = os.getenv("GOOGLE_SPREADSHEET_ID", "")
+SCHEDULE_FILE_URL = os.getenv("SCHEDULE_FILE_URL", "")
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Yekaterinburg")
 
 bot = MaxBotClient(MAX_TOKEN) if MAX_TOKEN else None
 parser: ScheduleParser | None = None
 try:
-    if SPREADSHEET_ID:
-        parser = ScheduleParser(SPREADSHEET_ID, timezone=TIMEZONE)
-except Exception as exc:  # на старте не валимся, если файлы ещё не готовы
+    if SCHEDULE_FILE_URL:
+        parser = ScheduleParser(SCHEDULE_FILE_URL, timezone=TIMEZONE)
+except Exception as exc:  # на старте не валимся, если файл ещё не готов
     log.warning("Не удалось инициализировать парсер: %s", exc)
 
 # Соответствие индекса дня (0=пн) названию листа в книге.
@@ -56,28 +57,28 @@ def today_date() -> date:
 
 
 def build_menu_buttons() -> list[list[dict]]:
-    """Собирает массив кнопок главного меню.
+    """Собирает массив кнопок главного меню (действия + параллели).
 
     Тип message имитирует ввод текста — при нажатии пользователь
     "печатает" подпись кнопки. Это удобно: выбор класса/дня идёт через ту же
     текстовую логику, не требуя ответа на callback.
     """
-    classes = parser.get_available_classes() if parser else []
     buttons: list[list[dict]] = []
 
     # Ряд с действиями
     actions = [
         {"type": "message", "text": "Сегодня"},
         {"type": "message", "text": "Завтра"},
-        {"type": "message", "text": "Сменить класс"},
+        {"type": "message", "text": "Изменить класс"},
         {"type": "message", "text": "Помощь"},
     ]
     buttons.append(actions)
 
-    # Классы по рядам, до 4 в ряд
+    # Параллели (5-е, 6-е, ...) — первый шаг выбора класса
+    groups = _grouped_classes()
     row: list[dict] = []
-    for cls in classes:
-        row.append({"type": "message", "text": cls})
+    for k in groups:
+        row.append({"type": "message", "text": f"{k}-е"})
         if len(row) == 4:
             buttons.append(row)
             row = []
@@ -211,12 +212,24 @@ def handle_message(chat_id, user_id, text: str):
         reply = format_schedule(class_name, target_date)
         return bot.send_message_with_keyboard(chat_id, reply, build_menu_buttons(), user_id=user_id)
 
-    # --- 2) Кнопка/команда «Сменить класс»: забываем запомненный класс и показываем выбор ---
-    if tl in ("сменить класс", "сменить", "выбрать класс", "сменитькласс"):
+    # --- 2) Кнопка/команда «Изменить класс»: забываем запомненный класс и показываем выбор ---
+    if tl in ("изменить класс", "сменить класс", "изменить", "сменить", "выбрать класс",
+              "изменитькласс", "сменитькласс"):
         forget_user_class(key)
         pending_day.pop(key, None)
-        msg = "Хорошо! Выберите новый класс:"
-        return bot.send_message_with_keyboard(chat_id, msg, _class_buttons_only(), user_id=user_id)
+        msg = "Хорошо! Выберите параллель, затем класс:"
+        return bot.send_message_with_keyboard(chat_id, msg, build_menu_buttons(), user_id=user_id)
+
+    # --- 2.5) Выбор параллели («5-е», «6-е»...) — показать классы параллели ---
+    mpar = re.fullmatch(r"\s*(\d{1,2})\s*-?\s*е", tl)
+    if mpar:
+        par = mpar.group(1)
+        classes = _classes_of_parallel(par)
+        if not classes:
+            msg = f"Параллель {par}-х не найдена в расписании."
+            return bot.send_message_with_keyboard(chat_id, msg, build_menu_buttons(), user_id=user_id)
+        msg = f"Выберите класс из {par}-х:"
+        return bot.send_message_with_keyboard(chat_id, msg, _class_buttons_for_parallel(par), user_id=user_id)
 
     # --- 3) Простое приветствие/меню ---
     if tl in ("/start", "привет", "здравствуй", "начать", "старт", "помощь", "/help", "меню"):
@@ -237,10 +250,10 @@ def handle_message(chat_id, user_id, text: str):
             # класс уже выбран — сразу показываем расписание
             reply = format_schedule(saved, target_date)
             return bot.send_message_with_keyboard(chat_id, reply, build_menu_buttons(), user_id=user_id)
-        # класса ещё нет — просим выбрать
+        # класса ещё нет — просим выбрать (двухступенчато: параллель → класс)
         pending_day[key] = target_date
-        msg = f"Выберите класс на {DAYS[target_date.weekday()]} ({target_date:%d.%m}):"
-        return bot.send_message_with_keyboard(chat_id, msg, _class_buttons_only(), user_id=user_id)
+        msg = f"Выберите параллель на {DAYS[target_date.weekday()]} ({target_date:%d.%m}):"
+        return bot.send_message_with_keyboard(chat_id, msg, build_menu_buttons(), user_id=user_id)
 
     # --- 5) Пользователь написал класс (5А, 9-б, 10А и т.п.) ---
     if is_likely_class(t):
@@ -266,6 +279,64 @@ def handle_message(chat_id, user_id, text: str):
 def _class_buttons_only() -> list[list[dict]]:
     """Кнопки только с классами (без действий) для выбора при конкретном дне."""
     classes = parser.get_available_classes() if parser else []
+    buttons: list[list[dict]] = []
+    row: list[dict] = []
+    for cls in classes:
+        row.append({"type": "message", "text": cls})
+        if len(row) == 4:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    return buttons
+
+
+def _parallel_of(class_name: str) -> str | None:
+    """Возвращает параллель класса (первая цифра) как строку, или None."""
+    m = re.match(r"\s*(\d{1,2})", class_name or "")
+    return m.group(1) if m else None
+
+
+def _grouped_classes() -> dict[str, list[str]]:
+    """Классы, сгруппированные по параллели (5, 6, 7 ...). Порядок цифровой."""
+    classes = parser.get_available_classes() if parser else []
+    groups: dict[str, list[str]] = {}
+    for cls in classes:
+        par = _parallel_of(cls)
+        if par is None:
+            continue
+        groups.setdefault(par, [])
+        if cls not in groups[par]:
+            groups[par].append(cls)
+    # сортируем ключи по числу
+    ordered = sorted(groups.keys(), key=lambda x: int(x))
+    return {k: groups[k] for k in ordered}
+
+
+def _parallel_buttons() -> list[list[dict]]:
+    """Кнопки параллелей («5-е», «6-е» ...) — первый уровень выбора."""
+    groups = _grouped_classes()
+    buttons: list[list[dict]] = []
+    row: list[dict] = []
+    for k in groups:
+        label = f"{k}-е" if int(k) <= 9 else f"{k}-е"
+        row.append({"type": "message", "text": label})
+        if len(row) == 4:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    return buttons
+
+
+def _classes_of_parallel(par: str) -> list[str]:
+    """Возвращает отсортированный список классов конкретной параллели."""
+    return _grouped_classes().get(str(par), [])
+
+
+def _class_buttons_for_parallel(par: str) -> list[list[dict]]:
+    """Кнопки классов одной параллели (второй уровень выбора)."""
+    classes = _classes_of_parallel(par)
     buttons: list[list[dict]] = []
     row: list[dict] = []
     for cls in classes:
