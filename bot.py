@@ -315,10 +315,14 @@ def webhook():
     # На случай обоих форматов — принимаем и массив (на всякий случай), и одиночный объект.
     updates = data.get("updates") if isinstance(data.get("updates"), list) else [data]
 
+    log.info("Webhook получил событие: %s", json.dumps(data, ensure_ascii=False)[:2000])
+
     for upd in updates:
         utype = upd.get("update_type")
+        log.info("Обрабатываю update_type=%s, update_keys=%s", utype, sorted(upd.keys()))
         # Обрабатываем текстовые сообщения и событие запуска бота («Старт»).
         if utype not in (None, "message_created", "bot_started"):
+            log.info("Пропускаю события типа %s", utype)
             continue
         msg = upd.get("message") or {}
         recipient = msg.get("recipient") or {}
