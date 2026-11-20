@@ -101,7 +101,7 @@ class MaxBotClient:
         """Отправляет сообщение с inline-клавиатурой.
 
         buttons — список рядов; каждый ряд — список кнопок:
-          {"type": "message_button", "text": "5А"}           # имитирует ввод текста
+          {"type": "message", "text": "5А"}           # имитирует ввод текста
           {"type": "callback_button", "text": "Помощь", "callback_data": "help"}
           {"type": "link", "text": "Сайт", "url": "https://..."}
 

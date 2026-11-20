@@ -58,7 +58,7 @@ def today_date() -> date:
 def build_menu_buttons() -> list[list[dict]]:
     """Собирает массив кнопок главного меню.
 
-    Тип message_button имитирует ввод текста — при нажатии пользователь
+    Тип message имитирует ввод текста — при нажатии пользователь
     "печатает" подпись кнопки. Это удобно: выбор класса/дня идёт через ту же
     текстовую логику, не требуя ответа на callback.
     """
@@ -67,17 +67,17 @@ def build_menu_buttons() -> list[list[dict]]:
 
     # Ряд с действиями
     actions = [
-        {"type": "message_button", "text": "Сегодня"},
-        {"type": "message_button", "text": "Завтра"},
-        {"type": "message_button", "text": "Сменить класс"},
-        {"type": "message_button", "text": "Помощь"},
+        {"type": "message", "text": "Сегодня"},
+        {"type": "message", "text": "Завтра"},
+        {"type": "message", "text": "Сменить класс"},
+        {"type": "message", "text": "Помощь"},
     ]
     buttons.append(actions)
 
     # Классы по рядам, до 4 в ряд
     row: list[dict] = []
     for cls in classes:
-        row.append({"type": "message_button", "text": cls})
+        row.append({"type": "message", "text": cls})
         if len(row) == 4:
             buttons.append(row)
             row = []
@@ -269,7 +269,7 @@ def _class_buttons_only() -> list[list[dict]]:
     buttons: list[list[dict]] = []
     row: list[dict] = []
     for cls in classes:
-        row.append({"type": "message_button", "text": cls})
+        row.append({"type": "message", "text": cls})
         if len(row) == 4:
             buttons.append(row)
             row = []
