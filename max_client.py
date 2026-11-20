@@ -75,9 +75,10 @@ class MaxBotClient:
         """
         body = {
             "text": text,
-            "disable_link_preview": disable_link_preview,
         }
         params = self._messages_query(chat_id=chat_id, user_id=user_id)
+        if disable_link_preview:
+            params["disable_link_preview"] = "true"
         if not params:
             raise MaxBotError("Нет user_id и chat_id для отправки сообщения")
         # Соберём URL с query вручную, т.к. payload уже json.
@@ -111,7 +112,6 @@ class MaxBotClient:
 
         body = {
             "text": text,
-            "disable_link_preview": disable_link_preview,
             "attachments": [
                 {
                     "type": "inline_keyboard",
@@ -120,6 +120,8 @@ class MaxBotClient:
             ],
         }
         params = self._messages_query(chat_id=chat_id, user_id=user_id)
+        if disable_link_preview:
+            params["disable_link_preview"] = "true"
         if not params:
             raise MaxBotError("Нет user_id и chat_id для отправки сообщения")
         return self._request("POST", f"/messages?{urlencode(params)}", payload=body)
