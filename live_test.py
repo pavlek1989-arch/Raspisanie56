@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Проверка парсера на реальном скачивании таблицы по публичной ссылке."""
+"""Проверка парсера на реальном скачивании файла расписания (.xlsx)."""
 import sys
 from datetime import date
 
-sys.path.insert(0, r"C:\Users\Учитель_2\Documents\MultiTool\HomeChats\Chat-2")
-
 from schedule_parser import ScheduleParser
 
-SPREADSHEET_ID = "1ryEIYma633BhbZhy2sgNs-WsRfRiObal"
-parser = ScheduleParser(SPREADSHEET_ID, timezone="Asia/Yekaterinburg")
+FILE_URL = "https://disk.yandex.ru/i/-yedy5QwZvabPQ"
+parser = ScheduleParser(FILE_URL, timezone="Asia/Yekaterinburg")
 
 print("days:", parser._get_sheet_names())
 print("classes (первый лист-дата):", parser.get_available_classes())

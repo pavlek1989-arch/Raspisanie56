@@ -1,14 +1,11 @@
-"""Парсер расписания из Google-таблицы (публичный доступ по ссылке, .xlsx).
+"""Парсер расписания из файла .xlsx по публичной ссылке (например Яндекс.Диск).
 
-Бот НЕ использует сервисный аккаунт и Google Sheets API. Он скачивает
-всю таблицу (книгу) как .xlsx по публичной ссылке:
+Бот НЕ использует ни сервисный аккаунт, ни Google Sheets API. Он скачивает
+книгу .xlsx целиком по публичной ссылке и разбирает все листы локально
+(через openpyxl). Если ссылка с Яндекс.Диска (disk.yandex.ru), парсер сам
+получает прямой URL скачивания через публичный API.
 
-    https://docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/export?format=xlsx
-
-и разбирает все листы локально (через openpyxl).
-
-Требование: для ID=... в .env таблица должна быть открыта «по ссылке —
-Читатель».
+Переменная окружения: SCHEDULE_FILE_URL = <публичная ссылка на .xlsx>.
 
 Реальная структура листа-даты (например "18.11.2026"):
   - Строка 1 (индекс 0): титулы блоков параллелей по колонкам.
@@ -104,10 +101,29 @@ class ScheduleParser:
         # кэш: (имя листа) -> list[list]  (сетка значений)
         self._sheets_data: dict[str, list[list]] = {}
 
+    def _resolve_download_url(self) -> str:
+        """Превращает публичную ссылку в прямой URL скачивания файла.
+
+        Если ссылка уже прямая (содержит downloader.disk.yandex.ru или не
+        disk.yandex.ru) — возвращаем как есть. Для публичной ссылки Яндекс.Диска
+        вида https://disk.yandex.ru/… запрашиваем href через публичный API,
+        чтобы подпись всегда была свежей.
+        """
+        if "downloader.disk.yandex.ru" in (self.file_url or "") or "disk.yandex.ru" not in (self.file_url or ""):
+            return self.file_url
+        api = f"https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key={self.file_url}"
+        resp = self.session.get(api, timeout=self.timeout)
+        resp.raise_for_status()
+        data = resp.json()
+        href = data.get("href")
+        if not href:
+            raise requests.RequestException("Не удалось получить ссылку на скачивание из Яндекс.Диска")
+        return href
+
     def _download_book(self) -> None:
-        """Скачивает книгу .xlsx по прямому URL (напр. ссылка на Яндекс.Диск/файл)."""
-        # Позволяем отключать проверку SSL (некоторые CDN/хостинги режут цепочку).
-        resp = self.session.get(self.file_url, timeout=self.timeout)
+        """Скачивает книгу .xlsx по публичной ссылке (Яндекс.Диск/прямой URL)."""
+        url = self._resolve_download_url()
+        resp = self.session.get(url, timeout=self.timeout)
         resp.raise_for_status()
         if not resp.content:
             raise requests.RequestException("Пустой ответ при скачивании файла расписания")
