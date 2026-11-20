@@ -316,14 +316,19 @@ def webhook():
     updates = data.get("updates") if isinstance(data.get("updates"), list) else [data]
 
     for upd in updates:
-        # Обрабатываем только события создания сообщения.
-        if upd.get("update_type") not in (None, "message_created"):
+        utype = upd.get("update_type")
+        # Обрабатываем текстовые сообщения и событие запуска бота («Старт»).
+        if utype not in (None, "message_created", "bot_started"):
             continue
         msg = upd.get("message") or {}
         recipient = msg.get("recipient") or {}
         sender = msg.get("sender") or {}
         body = msg.get("body") or {}
         text = (body.get("text") or "").strip()
+        # Событие bot_started — пользователь нажал «Старт» / открыл бота.
+        # Текста обычно нет, поэтому превращаем его в команду «/start».
+        if utype == "bot_started" and not text:
+            text = "/start"
 
         chat_id = recipient.get("chat_id")
         # user_id — отправитель для лички.
