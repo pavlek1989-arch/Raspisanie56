@@ -38,7 +38,10 @@ MAX_WEBHOOK_SECRET = os.getenv("MAX_WEBHOOK_SECRET", "")
 SCHEDULE_FILE_URL = os.getenv("SCHEDULE_FILE_URL", "")
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Yekaterinburg")
 
-bot = MaxBotClient(MAX_TOKEN) if MAX_TOKEN else None
+bot = MaxBotClient(
+    MAX_TOKEN,
+    verify_tls=os.getenv("MAX_VERIFY_TLS", "").lower() in ("1", "true", "yes"),
+) if MAX_TOKEN else None
 parser: ScheduleParser | None = None
 try:
     if SCHEDULE_FILE_URL:
@@ -500,4 +503,6 @@ def subscribe():
 
 if __name__ == "__main__":
     debug = os.getenv("FLASK_DEBUG", "").lower() in ("1", "true", "yes")
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8000")), debug=debug)
+    # threaded=True: Werkzeug-сервер иначе обрабатывает запросы последовательно
+    # (однопоточно), что превращает параллельные webhook-события в очередь.
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8000")), debug=debug, threaded=True)

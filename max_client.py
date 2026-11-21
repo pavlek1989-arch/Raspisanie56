@@ -26,10 +26,15 @@ class MaxBotError(Exception):
 
 
 class MaxBotClient:
-    def __init__(self, token: str, base_url: str = API_BASE, timeout: float = 20.0):
+    def __init__(self, token: str, base_url: str = API_BASE, timeout: float = 20.0,
+                 verify_tls: bool | None = None):
         self.token = token
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        # Включить проверку TLS можно env-переменной MAX_VERIFY_TLS=true.
+        # По умолчанию off (в контейнере без корневых CA цепочка не проверялась).
+        # Из кода не читаем env повторно: значение передаётся снаружи (см. bot.py).
+        self.verify_tls = verify_tls
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -44,12 +49,14 @@ class MaxBotClient:
     def _request(self, method: str, path: str, payload: dict | None = None) -> dict:
         url = self._url(path)
         # Внутри контейнера HTTPS API может отдавать неполную цепочку сертификатов,
-        # из-за чего verify=True падает с CERTIFICATE_VERIFY_FAILED. Отключаем проверку
-        # для этого эндпоинта (API MAX) и гасим предупреждение urllib3.
-        import urllib3
+        # из-за чего verify=True падает с CERTIFICATE_VERIFY_FAILED. По умолчанию
+        # проверку отключаем; включается через MAX_VERIFY_TLS=true (после установки CA).
+        verify = self.verify_tls
+        if not verify:
+            import urllib3
 
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        resp = self.session.request(method, url, json=payload, timeout=self.timeout, verify=False)
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        resp = self.session.request(method, url, json=payload, timeout=self.timeout, verify=verify)
         if resp.status_code >= 400:
             detail = resp.text[:500]
             raise MaxBotError(f"MAX API {method} {path} -> {resp.status_code}: {detail}")
