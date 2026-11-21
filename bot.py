@@ -182,7 +182,7 @@ def _resolve_target_date(tl: str) -> date | None:
     """Возвращает дату по тексту запроса ('сегодня'/'завтра'/'понедельник') или None."""
     if "завтра" in tl:
         return today_date() + timedelta(days=1)
-    if tl == "сегодня":
+    if "сегодня" in tl:
         return today_date()
     weekday_map = {
         "понедельник": 0, "вторник": 1, "среда": 2, "среду": 2,
@@ -247,9 +247,14 @@ def handle_message(chat_id, user_id, text: str):
     target_date = _resolve_target_date(tl)
     if target_date is not None and target_date.weekday() >= 5:
         # Суббота/воскресенье — выходной: предлагаем ближайший понедельник.
-        weekday_label = DAYS[target_date.weekday()]
+        if "сегодня" in tl:
+            when = "Сегодня"
+        elif "завтра" in tl:
+            when = "Завтра"
+        else:
+            when = DAYS[target_date.weekday()]
         msg = (
-            f"{weekday_label} ({target_date:%d.%m}) — выходной день.\n"
+            f"{when} ({target_date:%d.%m}) — выходной день.\n"
             "Хотите показать расписание на понедельник?"
         )
         buttons = [[{"type": "message", "text": "Понедельник"}], *build_menu_buttons()]
