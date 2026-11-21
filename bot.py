@@ -221,7 +221,8 @@ def handle_message(chat_id, user_id, text: str):
         return bot.send_message_with_keyboard(chat_id, msg, build_menu_buttons(), user_id=user_id)
 
     # --- 2.5) Выбор параллели («5-е», «6-е»...) — показать классы параллели ---
-    mpar = re.fullmatch(r"\s*(\d{1,2})\s*-?\s*е", tl)
+    # Дефис обязателен, чтобы текст «5е» (класс 5Е) не спутался с «5-е».
+    mpar = re.fullmatch(r"\s*(\d{1,2})\s*-\s*е\s*", tl)
     if mpar:
         par = mpar.group(1)
         classes = _classes_of_parallel(par)
