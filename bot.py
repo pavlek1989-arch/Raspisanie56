@@ -442,6 +442,13 @@ def webhook():
         # Если sender нет — используем recipient.user_id (для диалогов).
         if user_id is None:
             user_id = recipient.get("user_id")
+        # События без вложенного message (bot_started/bot_stopped/bot_added и др.)
+        # несут chat_id и user на верхнем уровне Update. Подтягиваем их как fallback.
+        if chat_id is None:
+            chat_id = upd.get("chat_id")
+        if user_id is None:
+            top_user = upd.get("user") or {}
+            user_id = top_user.get("user_id")
 
         # Для ответа: в личку нужен user_id, в группу/канал — chat_id.
         chat_type = str(recipient.get("chat_type") or "").lower()
