@@ -195,6 +195,27 @@ def _resolve_target_date(tl: str) -> date | None:
     return None
 
 
+def weekend_message(target_date: date, tl: str) -> str | None:
+    """Сообщение «выходной» для субботы/воскресенья, иначе None."""
+    if target_date.weekday() < 5:
+        return None
+    if "сегодня" in tl:
+        when = "Сегодня"
+    elif "завтра" in tl:
+        when = "Завтра"
+    else:
+        when = DAYS[target_date.weekday()]
+    return (
+        f"{when} ({target_date:%d.%m}) — выходной день.\n"
+        "Хотите показать расписание на понедельник?"
+    )
+
+
+def weekend_buttons() -> list[list[dict]]:
+    """Кнопки к сообщению «выходной»: предложение понедельника + меню."""
+    return [[{"type": "message", "text": "Понедельник"}], *build_menu_buttons()]
+
+
 def handle_message(chat_id, user_id, text: str):
     """Главная логика: что ответить пользователю."""
     if not bot:
@@ -245,21 +266,10 @@ def handle_message(chat_id, user_id, text: str):
 
     # --- 4) Запрос дня (сегодня/завтра/понедельник...) ---
     target_date = _resolve_target_date(tl)
-    if target_date is not None and target_date.weekday() >= 5:
-        # Суббота/воскресенье — выходной: предлагаем ближайший понедельник.
-        if "сегодня" in tl:
-            when = "Сегодня"
-        elif "завтра" in tl:
-            when = "Завтра"
-        else:
-            when = DAYS[target_date.weekday()]
-        msg = (
-            f"{when} ({target_date:%d.%m}) — выходной день.\n"
-            "Хотите показать расписание на понедельник?"
-        )
-        buttons = [[{"type": "message", "text": "Понедельник"}], *build_menu_buttons()]
-        return bot.send_message_with_keyboard(chat_id, msg, buttons, user_id=user_id)
     if target_date is not None:
+        wm = weekend_message(target_date, tl)
+        if wm:
+            return bot.send_message_with_keyboard(chat_id, wm, weekend_buttons(), user_id=user_id)
         saved = get_user_class(key)
         if saved:
             # класс уже выбран — сразу показываем расписание
@@ -274,11 +284,17 @@ def handle_message(chat_id, user_id, text: str):
     if is_likely_class(t):
         class_name = normalize_class_name(t)
         set_user_class(key, class_name)  # запоминаем класс
+        wm = weekend_message(today_date(), tl)
+        if wm:
+            return bot.send_message_with_keyboard(chat_id, wm, weekend_buttons(), user_id=user_id)
         return _answer_for_day(chat_id, user_id, today_date(), requested_class=class_name)
 
     # --- 6) Общий запрос: если класс уже есть — показать расписание на сегодня ---
     saved = get_user_class(key)
     if saved:
+        wm = weekend_message(today_date(), tl)
+        if wm:
+            return bot.send_message_with_keyboard(chat_id, wm, weekend_buttons(), user_id=user_id)
         reply = format_schedule(saved, today_date())
         return bot.send_message_with_keyboard(chat_id, reply, build_menu_buttons(), user_id=user_id)
 
