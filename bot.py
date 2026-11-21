@@ -245,6 +245,15 @@ def handle_message(chat_id, user_id, text: str):
 
     # --- 4) Запрос дня (сегодня/завтра/понедельник...) ---
     target_date = _resolve_target_date(tl)
+    if target_date is not None and target_date.weekday() >= 5:
+        # Суббота/воскресенье — выходной: предлагаем ближайший понедельник.
+        weekday_label = DAYS[target_date.weekday()]
+        msg = (
+            f"{weekday_label} ({target_date:%d.%m}) — выходной день.\n"
+            "Хотите показать расписание на понедельник?"
+        )
+        buttons = [[{"type": "message", "text": "Понедельник"}], *build_menu_buttons()]
+        return bot.send_message_with_keyboard(chat_id, msg, buttons, user_id=user_id)
     if target_date is not None:
         saved = get_user_class(key)
         if saved:
