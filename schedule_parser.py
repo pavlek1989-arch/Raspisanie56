@@ -304,19 +304,49 @@ class ScheduleParser:
         if class_col is None:
             return DaySchedule(day_name=day_name, lessons=[])
 
-        # маркерная колонка номера урока для этого класса
+        # маркерная колонка номера урока для этого класса.
+        # Это ближайшая слева колонка с числами-номерами уроков в слотах ниже
+        # шапки, но в ТОМ ЖЕ блоке, что и класс (не перескакивая через другие
+        # классы). У блоков 10-11 и 6-7 нумерация в отдельной колонке (есть «0»).
         marker_col: int | None = None
-        for j in range(class_col, -1, -1):
-            if j >= len(header) or header[j] is None:
-                continue
-            if NUMP_RE.search(str(header[j]).strip()):
+        # Выберем колонку-маркер номера урока для этого класса.
+        # Маркером считаем колонку, где в слотах под шапкой стоят числа
+        # (номера уроков, включая "0.\n8.00" для 0-урока). Нужная колонка —
+        # ближайшая слева от class_col, не являющаяся классом; допускаем, что
+        # в группах 10-11 между маркером и классом стоят другие классы параллели.
+        def _col_has_lesson_numbers(j: int) -> bool:
+            if j >= len(rows[min(header_idx + 1, len(rows) - 1)]):
+                return False
+            count = 0
+            k = header_idx + 1
+            while k < len(rows) and k - (header_idx + 1) < 16:
+                v = rows[k][j] if j < len(rows[k]) else None
+                if v is not None:
+                    # первая цифра (обрабатывает "1\n8.50" и "0.\n8.00" как номер)
+                    if re.match(r"^\s*\d{1,2}\.?", str(v)):
+                        count += 1
+                k += 2
+            return count >= 2
+
+        # Идём влево от class_col, сначала пропуская классы той же параллели,
+        # затем ищем первую числовую колонку.
+        for j in range(class_col - 1, -1, -1):
+            hdrj = header[j] if j < len(header) else None
+            if CLASS_RE.match(self._normalize_header_class(hdrj)):
+                continue  # другой класс — просто пропускаем, маркер может быть левее
+            if _col_has_lesson_numbers(j):
                 marker_col = j
                 break
-            if CLASS_RE.match(self._normalize_header_class(header[j])):
-                break
+        # Если в самом начале листа (например 5А): берём первую числовую колонку слева
+        if marker_col is None:
+            for j in range(class_col - 1, -1, -1):
+                if _col_has_lesson_numbers(j):
+                    marker_col = j
+                    break
 
         lessons: list[Lesson] = []
         slot = 1
+        prev_num = None  # последний выданный номер урока (для пустых маркеров)
         k = header_idx + 1
         n = len(rows)
         while k < n:
@@ -335,10 +365,19 @@ class ScheduleParser:
             period = str(slot)
             if marker_col is not None:
                 mv = subj_row[marker_col] if marker_col < len(subj_row) else None
-                if mv is not None and str(mv).strip() and not TIME_RE.search(str(mv)):
-                    m2 = re.match(r"(\d{1,2})", str(mv).strip())
-                    if m2:
-                        period = m2.group(1)
+                # номер урока — первые цифры исходного значения; так "1\n8.50"
+                # даёт 1, а "0.\n8.00" — 0.
+                m2 = re.match(r"^\s*(\d{1,2})", str(mv)) if mv is not None else None
+                if m2:
+                    period = m2.group(1)
+                else:
+                    # пустой маркер: продолжаем нумерацию после предыдущего урока
+                    # (первый пустой слот становится 0 — «0-урок» у 6-7 и 10-11).
+                    period = str(prev_num + 1 if prev_num is not None else 0)
+            try:
+                prev_num = int(period)
+            except ValueError:
+                prev_num = None
             room = ""
             if cab_row and class_col < len(cab_row) and cab_row[class_col] is not None:
                 r = str(cab_row[class_col]).strip()
