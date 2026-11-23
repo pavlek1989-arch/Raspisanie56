@@ -30,6 +30,7 @@ from __future__ import annotations
 import io
 import re
 import time
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -83,6 +84,46 @@ def normalize_class_name(text: str) -> str:
     return s
 
 
+def _sanitize_styles_xml(xml_text: str) -> str:
+    """Чистит styles.xml от нестандартных атрибутов границ.
+
+    Некоторые редакторы (напр. Яндекс.Документы) пишут в теги границ
+    <left>/<right>/<top>/<bottom> недопустимый style='solid' (это тип заливки,
+    а не границы). openpyxl на этом падает с 'could not read stylesheet'.
+    Убираем style= у тегов границ (значения ячеек от этого не зависят)."""
+    return re.sub(
+        r'<(s:)?(left|right|top|bottom|diagonal)\b[^>]*>',
+        lambda m: re.sub(r'\s+style="[^"]*"', '', m.group(0)),
+        xml_text,
+    )
+
+
+def _load_workbook_robust(content: bytes):
+    """Загружает xlsx, устойчиво к битым стилям (нестандартные границы).
+
+    Сначала пробуем обычный load_workbook. При ошибке чтения стилей
+    пересобираем архив с очищенными styles.xml и пробуем ещё раз.
+    """
+    try:
+        return load_workbook(io.BytesIO(content), data_only=True, read_only=False)
+    except ValueError:
+        pass
+    # Пересобираем zip, заменяя повреждённые XML стилей.
+    try:
+        src = zipfile.ZipFile(io.BytesIO(content))
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as dst:
+            for item in src.infolist():
+                data = src.read(item.filename)
+                if item.filename.endswith('styles.xml'):
+                    data = _sanitize_styles_xml(data.decode('utf-8', 'replace')).encode('utf-8')
+                dst.writestr(item, data)
+        return load_workbook(io.BytesIO(buf.getvalue()), data_only=True, read_only=False)
+    except Exception:
+        # Если не помогло — отдаём исходную ошибку (обычная картина для битого файла).
+        return load_workbook(io.BytesIO(content), data_only=True, read_only=False)
+
+
 class ScheduleParser:
     """Читает расписание, скачивая книгу .xlsx по публичной ссылке."""
 
@@ -127,7 +168,7 @@ class ScheduleParser:
         resp.raise_for_status()
         if not resp.content:
             raise requests.RequestException("Пустой ответ при скачивании файла расписания")
-        self._book = load_workbook(io.BytesIO(resp.content), data_only=True, read_only=False)
+        self._book = _load_workbook_robust(resp.content)
         self._book_ts = time.monotonic()
         self._sheet_names = None
         self._sheets_data.clear()
