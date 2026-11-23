@@ -45,7 +45,9 @@ bot = MaxBotClient(
 parser: ScheduleParser | None = None
 try:
     if SCHEDULE_FILE_URL:
-        parser = ScheduleParser(SCHEDULE_FILE_URL, timezone=TIMEZONE)
+        # cache_ttl=60: изменения в таблице подтягиваются максимум за минуту
+        # (свежее расписание важнее, чем экономия на перекачивании книги).
+        parser = ScheduleParser(SCHEDULE_FILE_URL, timezone=TIMEZONE, cache_ttl=60)
 except Exception as exc:  # на старте не валимся, если файл ещё не готов
     log.warning("Не удалось инициализировать парсер: %s", exc)
 
