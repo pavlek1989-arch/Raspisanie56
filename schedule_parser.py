@@ -67,17 +67,23 @@ EXPORT_URL = "https://docs.google.com/spreadsheets/d/{id}/export?format=xlsx"
 
 
 def normalize_class_name(text: str) -> str:
-    """Приводит ввод пользователя к виду '5А' / '9Б' / '10А'.
+    """Приводит ввод пользователя к виду '5А' / '9Б' / '10А' / '10А физ'.
 
-    Принимает: '5А', '5-А', '5 а', '5а', '5 "А"', '9б'. Отбрасывает
-    случайные символы после литеры (для составных '10А инф' вернёт '10А').
+    Принимает: '5А', '5-А', '5 а', '5а', '5 "А"', '9б'. Для составных классов
+    c профильными подгруппами сохраняем суффикс ('10А инф', '10А физ'),
+    иначе отбрасываем случайные символы после литеры.
     """
     if not text:
         return ""
     s = text.strip().replace("\u00a0", " ").upper().replace("Ё", "Е")
     m = CLASS_RE.match(s)
     if m:
-        return m.group(1) + m.group(2)
+        base = m.group(1) + m.group(2)
+        # известные суффиксы профильных подгрупп
+        rest = re.sub(r"\s+", " ", s[m.end():]).strip()
+        if rest in ("ИНФ", "ФИЗ"):
+            return base + " " + rest
+        return base
     m = re.fullmatch(r"\s*(\d{1,2})\s*", s)
     if m:
         return m.group(1)
