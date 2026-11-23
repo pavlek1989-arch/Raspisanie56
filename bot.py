@@ -235,7 +235,8 @@ def handle_message(chat_id, user_id, text: str):
     key = str(chat_id) if chat_id is not None else str(user_id)
 
     # --- 1) Состояние «ждём класс для дня» (пользователь выбирает класс после «Сегодня/Завтра/день») ---
-    if key in pending_day and is_likely_class(t):
+    # «5-е» сюда не попадает: это выбор параллели, а не класс.
+    if key in pending_day and is_likely_class(t) and not re.fullmatch(r"\s*\d{1,2}\s*-\s*е\s*", tl):
         target_date = pending_day.pop(key)
         class_name = normalize_class_name(t)
         set_user_class(key, class_name)  # запоминаем класс
@@ -259,6 +260,8 @@ def handle_message(chat_id, user_id, text: str):
         if not classes:
             msg = f"Параллель {par}-х не найдена в расписании."
             return bot.send_message_with_keyboard(chat_id, msg, build_menu_buttons(), user_id=user_id)
+        # после выбора параллели показываем классы; дата для них уже в pending_day
+        # и применится в блоке 1 после выбора конкретного класса.
         msg = f"Выберите класс из {par}-х:"
         return bot.send_message_with_keyboard(chat_id, msg, _class_buttons_for_parallel(par), user_id=user_id)
 
