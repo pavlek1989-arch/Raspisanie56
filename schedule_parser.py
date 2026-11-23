@@ -304,6 +304,28 @@ class ScheduleParser:
         if class_col is None:
             return DaySchedule(day_name=day_name, lessons=[])
 
+        # Базовая колонка для подгруппы (вариант 2): если у класса есть суффикс
+        # подгруппы («10А физ», «10А инф»), базой служит соседняя колонка такой же
+        # параллели со «сплошным» расписанием. По ней заполняются общие уроки,
+        # которых нет в своей колонке. Пример: 10А физ = своя колонка + «10А инф».
+        base_class_col: int | None = None
+        base_prefix = None
+        base_m = re.match(r"^\d{1,2}[А-ЯЁA-Z]+", want)
+        if base_m:
+            base_prefix = base_m.group(0)
+            # ищем соседнюю подгруппу с тем же префиксом (ближайшую слева, не равную текущей)
+            for i in range(class_col - 1, -1, -1):
+                hh = header[i] if i < len(header) else None
+                hn = self._normalize_header_class(hh)
+                if not hn:
+                    continue
+                if hn.upper() == want:
+                    continue
+                mm = re.match(r"^\d{1,2}[А-ЯЁA-Z]+", hn.upper())
+                if mm and mm.group(0) == base_prefix:
+                    base_class_col = i
+                    break
+
         # маркерная колонка номера урока для этого класса.
         # Это ближайшая слева колонка с числами-номерами уроков в слотах ниже
         # шапки, но в ТОМ ЖЕ блоке, что и класс (не перескакивая через другие
@@ -353,6 +375,12 @@ class ScheduleParser:
             subj_row = rows[k]
             cab_row = rows[k + 1] if k + 1 < n else []
             subj = subj_row[class_col] if class_col < len(subj_row) else None
+            # подгруппа: если своя ячейка пуста, берём общий предмет из базовой колонки
+            if (subj is None or str(subj).strip() == "") and base_class_col is not None:
+                b = subj_row[base_class_col] if base_class_col < len(subj_row) else None
+                if b is not None and str(b).strip():
+                    subj = b
+                    base_used = True
             if subj is None or str(subj).strip() == "":
                 k += 2
                 slot += 1
@@ -383,6 +411,11 @@ class ScheduleParser:
                 r = str(cab_row[class_col]).strip()
                 if r and (ROOM_RE.match(r) or not re.fullmatch(r"\d{1,2}\.?", r)):
                     room = r
+            # подгруппа: если кабинета нет — пробуем из базовой колонки
+            if not room and base_class_col is not None and cab_row and base_class_col < len(cab_row):
+                rb = str(cab_row[base_class_col]).strip() if cab_row[base_class_col] is not None else ""
+                if rb and (ROOM_RE.match(rb) or not re.fullmatch(r"\d{1,2}\.?", rb)):
+                    room = rb
             lessons.append(Lesson(period=period, subject=subj_text, room=room))
             k += 2
             slot += 1
