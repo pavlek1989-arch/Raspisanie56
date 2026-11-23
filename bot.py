@@ -123,9 +123,13 @@ def format_schedule(class_name: str, target: date) -> str:
 
 
 def is_likely_class(text: str) -> bool:
-    """Проверяем, похоже ли сообщение на название класса (5А, 5-А, 9 б)."""
+    """Похоже ли сообщение на название класса (5А, 5-А, 9 б, 10А).
+
+    Чистое число («1», «11») классом не считается — иначе бот собирает
+    расписание по частичному совпадению цифры с параллелью.
+    """
     normalized = normalize_class_name(text)
-    return len(normalized) >= 1 and normalized[:1].isdigit()
+    return bool(re.match(r"\d{1,2}-?[А-ЯЁA-Z]", normalized))
 
 
 # Состояние «ждём класс для конкретного дня».
