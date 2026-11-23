@@ -63,14 +63,6 @@ NUMP_RE = re.compile(r"№\s*п/?п")
 # Паттерн, отсекающий время-ячейки (0.\n8.00-8.40 и т.п.)
 TIME_RE = re.compile(r"\d{1,2}\s*[.\n-]\s*\d{1,2}[:.]\s*\d{2}")
 
-# Профильные предметы, которые ведутся ОТДЕЛЬНО по подгруппам 10А.
-# При сборке расписания подгруппы-«дополнения» (напр. «10А физ») из базовой
-# колонки («10А инф») берутся общие предметы, но профильные-«чужие» убираются.
-PROFILE_SUBJECTS = {
-    "ИНФ": {"ИНФОРМАТИКА", "ИКТ"},
-    "ФИЗ": {"ФИЗИКА"},
-}
-
 EXPORT_URL = "https://docs.google.com/spreadsheets/d/{id}/export?format=xlsx"
 
 
@@ -312,39 +304,6 @@ class ScheduleParser:
         if class_col is None:
             return DaySchedule(day_name=day_name, lessons=[])
 
-        # Базовая колонка для подгруппы (вариант 2): если у класса есть суффикс
-        # подгруппы («10А физ», «10А инф»), базой служит соседняя колонка такой же
-        # параллели со «сплошным» расписанием. По ней заполняются общие уроки,
-        # которых нет в своей колонке. Пример: 10А физ = своя колонка + «10А инф».
-        base_class_col: int | None = None
-        base_prefix = None
-        # Профильные предметы ОДНОЙ подгруппы, которые не нужны другой.
-        # Для «10А физ» фильтруем инф-профильные (Информатика/ИКТ) из базовой колонки.
-        profile_filter: set[str] | None = None
-        base_m = re.match(r"^\d{1,2}\s*[А-ЯЁA-Z]+", want)
-        if base_m:
-            base_prefix = base_m.group(0)
-            # ищем соседнюю подгруппу с тем же префиксом (ближайшую слева, не равную текущей)
-            my_suffix = re.sub(r"^\d{1,2}\s*[А-ЯЁA-Z]+", "", want).strip().upper()
-            for i in range(class_col - 1, -1, -1):
-                hh = header[i] if i < len(header) else None
-                hn = self._normalize_header_class(hh)
-                if not hn:
-                    continue
-                if hn.upper() == want:
-                    continue
-                mm = re.match(r"^\d{1,2}\s*[А-ЯЁA-Z]+", hn.upper())
-                if mm and mm.group(0) == base_prefix:
-                    base_class_col = i
-                    # суффикс базовой подгруппы (напр. «инф») — её профильные убираем у текущей
-                    base_label = re.sub(r"^\d{1,2}\s*[А-ЯЁA-Z]+", "", hn.upper()).strip()
-                    # current suffix («физ») — чужие профильные = профильные ДРУГОЙ подгруппы
-                    if base_label and my_suffix:
-                        # профильные той подгруппы, ЧЬИ предметы в базе (не текущей)
-                        other_key = base_label
-                        profile_filter = PROFILE_SUBJECTS.get(other_key)
-                    break
-
         # маркерная колонка номера урока для этого класса.
         # Это ближайшая слева колонка с числами-номерами уроков в слотах ниже
         # шапки, но в ТОМ ЖЕ блоке, что и класс (не перескакивая через другие
@@ -394,18 +353,6 @@ class ScheduleParser:
             subj_row = rows[k]
             cab_row = rows[k + 1] if k + 1 < n else []
             subj = subj_row[class_col] if class_col < len(subj_row) else None
-            # подгруппа: если своя ячейка пуста, берём общий предмет из базовой колонки
-            if (subj is None or str(subj).strip() == "") and base_class_col is not None:
-                b = subj_row[base_class_col] if base_class_col < len(subj_row) else None
-                b_s = str(b).strip() if b is not None else ""
-                # профильный «чужой» предмет другой подгруппы — не берём
-                if b_s and profile_filter:
-                    b_key = b_s.upper().split("(")[0].strip()
-                    if b_key in profile_filter:
-                        b_s = ""
-                if b_s:
-                    subj = b
-                    base_used = True
             if subj is None or str(subj).strip() == "":
                 k += 2
                 slot += 1
@@ -436,11 +383,6 @@ class ScheduleParser:
                 r = str(cab_row[class_col]).strip()
                 if r and (ROOM_RE.match(r) or not re.fullmatch(r"\d{1,2}\.?", r)):
                     room = r
-            # подгруппа: если кабинета нет — пробуем из базовой колонки
-            if not room and base_class_col is not None and cab_row and base_class_col < len(cab_row):
-                rb = str(cab_row[base_class_col]).strip() if cab_row[base_class_col] is not None else ""
-                if rb and (ROOM_RE.match(rb) or not re.fullmatch(r"\d{1,2}\.?", rb)):
-                    room = rb
             lessons.append(Lesson(period=period, subject=subj_text, room=room))
             k += 2
             slot += 1
