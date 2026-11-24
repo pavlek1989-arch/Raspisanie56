@@ -43,6 +43,7 @@ class Lesson:
     period: str  # номер урока ("1", "2", ...)
     subject: str  # название предмета
     room: str  # кабинет ("" если нет)
+    is_change: bool = False  # True, если урок помечен как замена (жёлтая заливка)
 
 
 @dataclass
@@ -147,6 +148,8 @@ class ScheduleParser:
         self._sheet_names: list[str] | None = None
         # кэш: (имя листа) -> list[list]  (сетка значений)
         self._sheets_data: dict[str, list[list]] = {}
+        # кэш: (имя листа) -> set[(строка, колонка)] жёлтых ячеек (замены)
+        self._sheets_yellow: dict[str, set[tuple[int, int]]] = {}
 
     def _resolve_download_url(self) -> str:
         """Превращает публичную ссылку в прямой URL скачивания файла.
@@ -178,6 +181,7 @@ class ScheduleParser:
         self._book_ts = time.monotonic()
         self._sheet_names = None
         self._sheets_data.clear()
+        self._sheets_yellow.clear()
 
     def _ensure_book(self) -> None:
         if self._book is None or time.monotonic() - self._book_ts >= self.cache_ttl:
@@ -190,16 +194,44 @@ class ScheduleParser:
         return self._sheet_names
 
     def _sheet_rows(self, sheet_title: str) -> list[list]:
-        """Возвращает сетку строк листа (свежую в пределах кэша)."""
+        """Возвращает сетку строк листа (свежую в пределах кэша).
+
+        Параллельно запоминает координаты ячеек с жёлтой заливкой (замена урока).
+        """
         self._ensure_book()
         if sheet_title not in self._sheets_data:
             ws = self._book[sheet_title] if sheet_title in self._book.sheetnames else None
             data: list[list] = []
+            yellow: set[tuple[int, int]] = set()  # (строка 0-индекс, колонка 0-индекс)
             if ws is not None:
-                for row in ws.iter_rows(values_only=True):
-                    data.append([("" if c is None else c) for c in row])
+                for r_idx, row in enumerate(ws.iter_rows()):
+                    rvals = []
+                    for c_idx, cell in enumerate(row):
+                        rvals.append("" if cell.value is None else cell.value)
+                        if self._is_yellow_fill(cell):
+                            yellow.add((r_idx, c_idx))
+                    data.append(rvals)
             self._sheets_data[sheet_title] = data
+            self._sheets_yellow[sheet_title] = yellow
         return self._sheets_data[sheet_title]
+
+    @staticmethod
+    def _is_yellow_fill(cell) -> bool:
+        """Жёлтая ли заливка ячейки (маркер «замена» в Яндекс-таблице)."""
+        fill = cell.fill
+        if fill is None or fill.fill_type != "solid":
+            return False
+        try:
+            rgb = getattr(fill.start_color, "rgb", None)
+        except Exception:
+            return False
+        return rgb in ("FFFFFF00", "FFFF00")  # жёлтый
+
+    def _yellow_cells(self, sheet_title: str) -> set[tuple[int, int]]:
+        """Индексы жёлтых ячеек листа (0-индекс), загрузив при необходимости."""
+        if sheet_title not in self._sheets_yellow:
+            self._sheet_rows(sheet_title)
+        return self._sheets_yellow.get(sheet_title, set())
 
     # --- работа с датами листов ---
     def _sheet_to_date(self, title: str) -> "datetime.date | None":
@@ -226,6 +258,7 @@ class ScheduleParser:
         self._book_ts = 0.0
         self._sheet_names = None
         self._sheets_data.clear()
+        self._sheets_yellow.clear()
 
     def get_available_classes(self, day_sheet: str | None = None) -> list[str]:
         try:
@@ -286,6 +319,7 @@ class ScheduleParser:
         rows = self._sheet_rows(sheet_title)
         if not rows:
             return DaySchedule(day_name=day_name, lessons=[])
+        yellow = self._yellow_cells(sheet_title)
         header_idx = self._find_header_row(rows)
         if header_idx is None:
             return DaySchedule(day_name=day_name, lessons=[])
@@ -389,7 +423,8 @@ class ScheduleParser:
                 r = str(cab_row[class_col]).strip()
                 if r and (ROOM_RE.match(r) or not re.fullmatch(r"\d{1,2}\.?", r)):
                     room = r
-            lessons.append(Lesson(period=period, subject=subj_text, room=room))
+            lessons.append(Lesson(period=period, subject=subj_text, room=room,
+                              is_change=(k, class_col) in yellow))
             k += 2
             slot += 1
         return DaySchedule(day_name=day_name, lessons=lessons)

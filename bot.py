@@ -117,8 +117,9 @@ def format_schedule(class_name: str, target: date) -> str:
     for i, lesson in enumerate(day.lessons, start=1):
         num = lesson.period or str(i)
         subj = lesson.subject
+        mark = " ⚠️" if lesson.is_change else ""
         room = f" — каб. {lesson.room}" if lesson.room else ""
-        lines.append(f"{num}. {subj}{room}")
+        lines.append(f"{num}. {subj}{mark}{room}")
     return "\n".join(lines)
 
 
