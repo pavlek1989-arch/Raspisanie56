@@ -117,8 +117,9 @@ def format_schedule(class_name: str, target: date) -> str:
     day = parser.get_schedule_for_date(class_name, target)
     if not day.lessons:
         return (
-            f"Для класса {class_name} на {day.day_name} ({target:%d.%m}) расписания не нашлось. "
-            "Проверьте название класса или что лист с этой датой есть в таблице."
+            f"На {day.day_name} ({target:%d.%m}) расписания для {class_name} пока нет.\n"
+            "Возможно, в этот день нет занятий или расписание ещё не добавлено.\n"
+            "Попробуйте выбрать другой день или обратитесь к учителю."
         )
     lines = [f"📅 Расписание {class_name} — {day.day_name} {target:%d.%m.%Y}:"]
     for i, lesson in enumerate(day.lessons, start=1):
