@@ -37,6 +37,8 @@ MAX_TOKEN = os.getenv("MAX_TOKEN", "")
 MAX_WEBHOOK_SECRET = os.getenv("MAX_WEBHOOK_SECRET", "")
 SCHEDULE_FILE_URL = os.getenv("SCHEDULE_FILE_URL", "")
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Yekaterinburg")
+# Ссылка на школьный канал (кнопка в главном меню). Можно переопределить через env.
+CHANNEL_URL = os.getenv("CHANNEL_URL", "https://max.ru/id7203543799_gos")
 
 bot = MaxBotClient(
     MAX_TOKEN,
@@ -69,6 +71,11 @@ def build_menu_buttons() -> list[list[dict]]:
     текстовую логику, не требуя ответа на callback.
     """
     buttons: list[list[dict]] = []
+
+    # Ряд со ссылкой на школьный канал (над действиями)
+    buttons.append([
+        {"type": "link", "text": "📣 Наш канал", "url": CHANNEL_URL},
+    ])
 
     # Ряд с действиями
     actions = [
