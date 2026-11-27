@@ -224,7 +224,7 @@ def weekend_message(target_date: date, tl: str) -> str | None:
         when = DAYS[target_date.weekday()]
     return (
         f"{when} ({target_date:%d.%m}) — выходной день.\n"
-        "Хотите покажу расписание на понедельник?"
+        "Хотите посмотреть расписание на понедельник?"
     )
 
 
